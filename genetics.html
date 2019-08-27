@@ -1,0 +1,213 @@
+
+<canvas id = "canvas" width = "600" height = "600"></canvas>
+
+<script>
+	let canvas = document.getElementById('canvas');
+	let ctx = canvas.getContext('2d');
+	let goal = {
+		x:canvas.width/2,
+		y:0,
+		width:20,
+		height:20,
+		getCenter:function(){
+			return {
+				x: this.x+this.width/2,
+				y: this.y+this.height/2
+			}
+		}
+	}
+	canvas.addEventListener('click',(e)=>{
+		if(pop.allDead){
+			pop.findFitness();
+			pop.makeChildren();
+		}
+	});
+	const MAX_STEPS = 1000;
+	const POP_SIZE = 200;
+	class Population{
+		constructor(items){
+			this.bullets = [];
+			this.avgSteps = 0;
+			this.minSteps = 0;
+			this.totalFitness = 0;
+			this.mostFit = 0;
+			this.allDead = false;
+			this.bestSteps = MAX_STEPS;
+			this.generation = 1;
+			this.populateBullets(items);
+		}
+		populateBullets(total){
+			for(let i =0; i < total; i++){
+				let bullet = new Bullet(canvas.width/2,canvas.height/2);
+				this.bullets.push(bullet)
+			}
+		}
+		deathCheck(){
+			this.allDead = true;
+			this.bullets.forEach(bullet=>{
+				if(!bullet.brain.dead){
+					this.allDead = false;
+				}
+			});
+		}
+		findFitness(){
+			let totalSteps = 0;
+			this.bullets.forEach(bullet=>{
+				totalSteps += bullet.brain.steps;
+				let fitness = 0;
+				fitness = 1/(distance(bullet,goal)**2);
+				if(bullet.hitGoal){
+					fitness += this.bestSteps/bullet.brain.steps;
+				}
+				bullet.fitness = fitness;
+				this.totalFitness += fitness;
+			});
+			this.avgSteps = totalSteps/this.bullets.length;
+			let maxFit = 0;
+			this.mostFit = 0;
+			this.minSteps = MAX_STEPS;
+			for(let i = 0; i < this.bullets.length; i++){
+				if(this.bullets[i].brain.steps < this.minSteps && this.bullets[i].hitGoal){
+					this.minSteps = this.bullets[i].brain.steps;
+				}
+				if(this.bullets[i].fitness > maxFit){
+					this.mostFit = i;
+					maxFit = this.bullets[i].fitness;
+				}
+			}
+		}
+		makeChildren(){
+			let newBullets = [];
+			for(let i = 0; i < POP_SIZE; i++){
+				let parent = this.selectParent();
+				//console.log(parent.x)
+				let newBullet = new Bullet(canvas.width/2,canvas.height/2);
+				newBullet.brain.directions = JSON.parse(JSON.stringify(parent.brain.directions));
+				newBullet.brain.mutate();
+				newBullets.push(newBullet);
+				//console.log(newBullet.brain.directions[0])
+			}
+			this.bullets = newBullets;
+			//console.log(this.bullets[0].brain.directions[0])
+			this.allDead = false;
+			this.totalFitness = 0;
+			this.generation++;
+		}
+		selectParent(){
+				let rand = Math.floor(Math.random()*this.totalFitness);
+ 				let runningSum = 0;
+  				for(let i = 0; i < this.bullets.length;i++){
+  					let bullet = this.bullets[i];
+    				runningSum += bullet.fitness;
+    				if(runningSum > rand){
+      					return bullet;
+    				}
+  				}
+		}
+
+	}
+	class Brain{
+		constructor(size){
+			this.directions = [];
+			this.steps = 0;
+			this.dead = false;
+			for(let i = 0; i < size; i++){
+				this.directions.push(this.newDirection());
+			}
+		}
+		newDirection(){
+			let theta = Math.random() * (Math.PI*2);
+			let x = Math.cos(theta);
+			let y = Math.sin(theta);
+			return({x,y});
+		}
+		nextDirection(){
+			this.steps++;
+			if(this.steps >= this.directions.length){
+				this.dead = true;
+				return;
+			}
+			return this.directions[this.steps];
+		}
+		mutate(){
+			for(let i = 0; i < this.directions.length; i++){
+				if(Math.random() < 0.01){
+					let dir = this.newDirection()
+					this.directions[i].x = dir.x;
+					this.directions[i].y = dir.y;
+				}
+			}
+		}
+
+	}
+	class Bullet {
+		constructor(x,y){
+			this.x = x;
+			this.y = y;
+			this.width = 5;
+			this.height = 5;
+			this.speed =7;
+			this.hitGoal = false;
+			this.brain = new Brain(MAX_STEPS);
+		}
+
+		move(){
+			if(this.brain.dead)
+				return;
+			let dir = this.brain.nextDirection();
+			if(this.brain.dead)
+				return;
+			this.x += this.speed * dir.x;
+			this.y += this.speed * dir.y;
+			if(this.x > canvas.width-this.width || this.x < 0 || this.y > canvas.height-this.height || this.y < 0)
+				this.brain.dead = true;
+			if(collide(this,goal)){
+				this.brain.dead = true;
+				this.hitGoal = true;
+				if(this.brain.steps < pop.bestSteps){
+					pop.bestSteps = this.brain.steps;
+				}
+			}
+		}
+	}
+	let collide = (o1,o2)=>{
+		return o1.x < o2.x + o2.width && o1.x + o1.width > o2.x && o1.y < o2.y + o2.height && o1.y + o1.height > o2.y;
+	}
+	let distance = (o1,o2)=>{
+		return Math.sqrt(Math.pow(o2.x-o1.x,2)+Math.pow(o2.y-o1.y,2));
+	}
+	let pop = new Population(POP_SIZE);
+	let interval = setInterval(()=>{
+		update();
+		render();
+	},1000/60);
+	let update = ()=>{
+		if(!pop.allDead){
+			pop.bullets.forEach(bullet=>{
+				bullet.move();
+			});
+			pop.deathCheck();
+		} else {
+			canvas.click();
+		}
+	}
+	let render = ()=>{
+		ctx.clearRect(0,0,canvas.width,canvas.height);
+		ctx.fillStyle = 'blue';
+		ctx.fillRect(0,0,canvas.width,canvas.height);
+		ctx.fillStyle = 'white';
+		ctx.font = "20px Arial";
+		ctx.fillText(`generation: ${pop.generation}`,30,30);
+		ctx.fillText(`last gen avg steps: ${pop.avgSteps}`,30,60);
+		ctx.fillText(`last gen min steps: ${pop.minSteps}`,30,90);
+		ctx.fillStyle = 'green';
+		ctx.fillRect(goal.x,goal.y,goal.width,goal.height);
+		ctx.fillStyle = 'red';
+		pop.bullets.forEach(bullet=>{
+			ctx.fillRect(bullet.x,bullet.y,bullet.width,bullet.height);
+		});
+		ctx.fillStyle = 'yellow';
+		ctx.fillRect(pop.bullets[pop.mostFit].x,pop.bullets[pop.mostFit].y,pop.bullets[pop.mostFit].width,pop.bullets[pop.mostFit].height);
+
+	}
+</script>
